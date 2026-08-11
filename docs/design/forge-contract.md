@@ -1,8 +1,10 @@
 # Forge Contract — Design Spike
 
-**Status:** Design — the seam the GitHub App campaign pays for. Not started.
-Implementation waits on an explicit owner go/no-go (ROADMAP Next item 1).
-**Date:** 2026-08-08
+**Status:** Approved — owner go recorded 2026-08-11 (ROADMAP Next item 1).
+Implementation may start. The seeds plan for the campaign is the work queue.
+**Date:** 2026-08-08. **Amended:** 2026-08-11, from an eight-track audit of
+HEAD that re-verified every §6 claim and settled the four design questions
+the first draft left to house style (§1.1, §2.1, §2.2, §7).
 **Companion:** [`ROADMAP.md`](../../ROADMAP.md) Next item 1 — the campaign this seam serves.
 Modeled on [`runtime-provider-contract.md`](./runtime-provider-contract.md).
 **Grounded in:** a full call-site audit of warren's GitHub and git-credential
@@ -40,9 +42,9 @@ interface Forge {
   readonly capabilities: ForgeCapabilities;
 
   // Parse a project's clone URL into an opaque, forge-neutral ref.
-  // Replaces three separate parsers with three grammars (see §6.3).
+  // Replaces the five URL grammars audited in §6.3.
   // NEVER throws. A URL this forge does not own returns null, and the
-  // registry tries the next forge.
+  // registry tries the next forge in its fixed boot order (§1.1).
   parseRepoRef(cloneUrl: string): RepoRef | null;
 
   // Mint a git-over-HTTPS credential for one operation.
@@ -100,6 +102,32 @@ place once App mode ships.
 There is no `mergePullRequest`. The old one was dead code and is already
 deleted. Warren merges through GitHub's auto-merge workflow, not through the
 API, and a merge method would give the seam a capability with no caller.
+
+### 1.1 Registry semantics (decided 2026-08-11)
+
+The first draft implied a try-the-next-forge chain without saying how it
+squares with the house style's boot-resolved registry (`src/runtime/registry.ts`,
+planning record §7: one registry, resolved once, unknown selections fail
+loudly). Settled as follows:
+
+- **One registry, resolved once at boot**, exactly like `resolveRuntimeProvider`.
+  The kind vocabulary is `FORGE_KINDS = ["github", "fake"]` with
+  `DEFAULT_FORGE_KIND = "github"`. `WARREN_FORGE` selects; blank means the
+  default; anything else throws `UnknownForgeError` at boot. No silent
+  fallback, no plugin discovery.
+- **`parseRepoRef` chaining operates over the boot-registered forges in
+  their fixed registration order**, and only there. It is how the registry
+  routes a clone URL to the forge that owns it — not a runtime discovery
+  mechanism. With one real forge registered, the chain has length one.
+- **FakeForge is production code under `src/forge/fake/`**, selected by
+  `WARREN_FORGE=fake`. It must not live in a `test-helpers` file: the layer
+  and wire gates exempt test paths, so a fake there would be invisible to
+  the very rule phase 2 exists to prove. FakeForge subsumes and deletes the
+  `WARREN_GH_FETCH_OVERRIDE=merged` env hack inside `src/runs/pr-checks.ts`
+  (acceptance scenarios 26 and 36 migrate onto it).
+- Boot and registry failures **throw** (`UnknownForgeError` extending
+  `WarrenError`, mirroring `UnknownRuntimeError`). Seam methods never throw;
+  they return `ForgeResult` (§2.2).
 
 ---
 
@@ -211,6 +239,42 @@ interface ForgeCapabilities {
 }
 ```
 
+### 2.1 Wire-vocabulary mechanics (decided 2026-08-11)
+
+`PullRequestLifecycle` lands in `src/core/wire.ts` in the house shape —
+tuple, type, guard (`PULL_REQUEST_LIFECYCLES` as const, the derived union,
+`isPullRequestLifecycle`) — not as the bare type alias sketched above.
+Every arm of `ForgeErrorKind` that lands in the canonical home gets the
+`RUN_FAILURE_REASONS`-style doc block: one paragraph per arm naming its
+detection site and what it is distinct from.
+
+`scripts/check-wire-types.ts` gains the stems `pull` and `forge`. Not `pr`:
+stem matching is substring-based, and `pr` would silently widen enforcement
+over `Provider`, `Preview`, `Priority`, and `Project`. One known collision:
+`CheckRun` already matches the `run` stem, and `src/ci-fixer/check-runs.ts`
+declares a local `CheckRun` today — the moment the canonical name lands, the
+ci-fixer copy must become a re-export (phase 3 carries that edit). UI label
+maps in `src/ui/src/lib/labels.ts` and the `src/ui/tsconfig.app.json`
+include list follow as usual.
+
+### 2.2 One result shape, and where throwing is still right (decided 2026-08-11)
+
+`RuntimeProvider` — this contract's declared model — throws typed
+`WarrenError` subclasses with a code→HTTP-status table
+(`src/runtime/errors.ts`). The forge seam deliberately does not copy that:
+`ForgeResult<T>` is the convention of the exact code being replaced
+(`OpenPullRequestResult`, `CheckPrMergedResult`, `FetchCheckRunsResult` are
+all result unions today), and §6.4's three-taxonomies problem is a
+result-shape problem. The split is:
+
+- **Seam methods return `ForgeResult<T>` and never throw.** The domain
+  switches on `ForgeErrorKind`; nothing catches across the seam.
+- **Boot-time failures throw** — `UnknownForgeError` and provider
+  construction errors, mirroring the runtime registry.
+- A small `FORGE_ERROR_HTTP_STATUS` table (modeled on
+  `RUNTIME_BACKEND_STATUS_BY_CODE`) lets `src/server/errors.ts` render a
+  `ForgeError` into a neutral envelope without importing provider classes.
+
 ---
 
 ## 3. What stays in the DOMAIN — the anti-leak guardrail
@@ -221,8 +285,13 @@ the domain owns *meaning*.
 
 - **PR body composition stays in `src/runs/pr-template.ts`.** The 64KB clamp
   lives in `composeBody`, never in the provider. A clamp inside
-  `openPullRequest` would conflict with this relocation, and warren-8ec1
-  already settled the placement for that reason.
+  `openPullRequest` would conflict with this relocation; PR #805 and record
+  mx-026320 already settled the placement for that reason. (The first draft
+  cited warren-8ec1 here — that id does not exist; the citation was a
+  phantom.) One hole the audit found: `annotatePrPreview` PATCHes a body it
+  never re-clamps, so a near-limit body plus a failure tail 422s today. The
+  fix is a domain fix — the annotate path re-clamps before calling
+  `setPullRequestBody` — and it rides phase 3.
 - **Issue-close-on-merge stays domain orchestration.** `Forge` owns the
   branch's fate. `IssueTracker` owns the work item. Neither seam calls the
   other (ROADMAP, Decisions already made).
@@ -257,8 +326,12 @@ credential in warren today is a static string captured once at boot.
 plan-run coordinator, and roughly ten handlers. An installation token expires
 one hour after minting, and an expired token returns 401 with no grace period.
 The worst offender is `createPrMergeChecker`: a multi-hour plan-run holds one
-token across every poll. A static token threaded through 66 files cannot
-express hourly expiry, which is exactly why the App pays for the campaign.
+token across every poll — and its retry policy treats 401/403 as
+keep-waiting, not fatal (`src/plan-runs/pr-merge.ts`), so under App mode an
+expired hourly token would silently stall the plan until the merge-wait
+budget expires rather than failing loudly. A static token threaded through
+66 files cannot express hourly expiry, which is exactly why the App pays for
+the campaign.
 
 **Rejected: `Forge.token: string`, refreshed by a background timer.** The type
 invites capture. Every call site that copies the string into a config object
@@ -355,24 +428,46 @@ count, not an estimate.
    `pr.ts` re-exporting it), `src/runs/pr-annotate.ts`, `src/ci-fixer/check-runs.ts`,
    and `scripts/acceptance/scenarios/35-ci-fixer-roundtrip.ts`. Each carries its
    own `GITHUB_API_BASE`, `USER_AGENT`, `buildHeaders`, `readJson`, `readText`,
-   and `truncate` — four copies of the same six helpers.
+   and `truncate` — but the copies have drifted, so consolidation is a
+   reconciliation, not a mechanical merge: `check-runs.ts` omits
+   `content-type` from its headers, only `pr-checks.ts` carries a
+   `Retry-After` parser, and scenario 35 has an inline header literal and no
+   readers at all.
 2. **Sixty-six non-test files touch GitHub or git-host credentials**, not
    thirty. One hundred and twenty-seven with tests. The earlier count caught the
    core logic and missed the token threading through `src/server/handlers/*`,
    `src/runtime/k8s/*`, and `scripts/acceptance/*`.
-3. **Three PR-URL parsers with three grammars and two failure conventions.**
+3. **Five URL grammars with three failure conventions, not three with two.**
    `src/projects/url.ts:31` throws and hard-rejects any host other than
    `github.com`. `src/runs/pr-checks.ts:174` returns null and accepts web URLs
-   only. `src/runs/pr-annotate.ts:146` returns null and accepts API URLs too.
+   only (query/fragment tolerated, `https` only). `src/runs/pr-annotate.ts:146`
+   returns null and accepts API URLs too (`http` allowed, no query
+   tolerance). Scenario 35 adds two more: `parseRepoSlug` throws
+   `AcceptanceError`, and a bare `/\/pull\/(\d+)/` extraction. The grammars
+   disagree in practice: `https://github.com/o/r/pull/7?diff=split` parses
+   in pr-checks — the merge poller and CI-fixer act on it — but returns
+   `bad_url` in pr-annotate, so preview annotation silently skips the same
+   PR.
 4. **Three error taxonomies for the same endpoint.** `GET /pulls/:n` is called
    from three places. One classifies 429, one does not, and one handles nothing.
-5. **Three unshared retry policies.** `pr-merge.ts` retries twice at 500ms and
-   honors `Retry-After`. `reap/pr-open.ts` uses 1s, 2s, and 4s. The CI-fixer
-   poller has no retry at all.
+5. **Four unshared retry policies, and two disagree in direction.**
+   `src/plan-runs/pr-merge.ts` (note the path — not `src/runs/`) retries
+   twice at 500ms, honors `Retry-After`, and treats network/0/5xx/429 as
+   transient but 4xx as fatal. `src/runs/reap/pr-open.ts` uses 1s, 2s, 4s
+   and does the inverse: it retries any `http_error` including 4xx but
+   never retries `network`. The CI-fixer poller has no retry at all, and
+   neither does `pr-annotate.ts` — on the same `GET /pulls/:n` that
+   pr-merge retries.
 6. **Four git-credential mechanisms, and one of them supplies no credential.**
-   `clone-apply.ts:191`, `salvage.ts:69`, and `local/finalize.ts:401` push while
-   relying on the supervisor's global rewrite, so they break under K8s today.
-   The literal `x-access-token@github.com` is hardcoded in three places.
+   The four: the supervisor's global `insteadOf` rewrite
+   (`src/supervisor/git-credentials.ts:72`), the per-spawn `GIT_CONFIG_*`
+   env (`src/workspace/git/credential-env.ts:34`, three callers), the
+   URL-embedded userinfo of `authenticatedCloneUrl`
+   (`src/workspace/git/clone-url.ts:25`, four callers across K8s and reap),
+   and no-credential-at-all: `clone-apply.ts:191`, `salvage.ts:69`, and
+   `local/finalize.ts:401` push while relying on the supervisor's global
+   rewrite, so they break under K8s today. The literal
+   `x-access-token@github.com` is hardcoded in three places.
 7. **A fine-grained PAT cannot read check runs.** Confirmed against GitHub's
    limitations list and against the absence of a Checks section in the
    fine-grained permission reference. This drives §5.
@@ -392,7 +487,24 @@ count, not an estimate.
     replaced `AUTO_MERGE_PAT` with `actions/create-github-app-token`, storing the
     App id in a repo variable and the private key in a secret. That work also
     supplies the campaign's liveness lesson: a dead static credential failed
-    silently for a day, so the App mode needs a heartbeat probe.
+    silently for a day, so the App mode needs a heartbeat probe. As of
+    2026-08-11 the App (id 4523930) is installed on the repo and proven
+    end-to-end: green `app-heartbeat`, first App-token auto-merge on PR #821.
+13. **`findExistingPr` cannot see cross-fork duplicates.** The 422-recovery
+    search hardcodes `head: ${owner}:${head}` (`src/runs/pr.ts:164`), so a
+    duplicate PR whose head lives on a fork is never found and the open
+    degrades to an opaque `http_error`. The provider's idempotent
+    `openPullRequest` must not inherit this assumption.
+14. **The acceptance harness never passes `GITHUB_TOKEN` into the warren it
+    boots.** `bootInProc` composes the child env from an allowlist
+    (`scripts/acceptance/lib/inproc.ts:247`) that does not include
+    `GITHUB_TOKEN`, and the runner's `extraEnv` adds only stub knobs. So
+    even an operator who exports `GITHUB_TOKEN` boots a warren whose
+    auto-open-PR config is empty — scenario 35's opener assertion cannot
+    pass in in-proc mode as written. CI has never noticed because it
+    provisions neither of the scenario's secrets, so it always records
+    `skipped` (tracked as warren seed; see the campaign plan). The
+    credential story must state, per scenario, which side owns the token.
 
 ---
 
@@ -401,20 +513,33 @@ count, not an estimate.
 The campaign runs in five phases, and the first two carry almost all the risk
 reduction for almost none of the behavior change.
 
-1. **Consolidate.** Collapse the four clients into `src/forge/github/http.ts`
-   with one header builder, one reader set, one retry policy, and one
-   `ForgeError` taxonomy. No contract yet, no behavior change. Article II
-   applies: the new file is born under the 500-line budget or it arrives
-   decomposed, and nothing is grandfathered at birth.
-2. **Cut the contract.** Land `Forge`, `ForgeCapabilities`, the registry, and
-   `FakeForge` as implementation #2 in the same PR as the `check:layers` rule
-   that fails a direct `api.github.com` import outside `src/forge/`. PHILOSOPHY
-   rule 4 holds that a seam is not done until a gate enforces it.
-3. **Migrate the call sites.** Move the wire vocabulary into `src/core/wire.ts`,
-   thread `Forge` through the reap pipeline, the plan-run coordinator, and the
-   CI-fixer. Article VI applies: this phase moves files that Dockerfile
-   entrypoints, workflow YAML, and supervisor spawn paths reference, and green
-   gates are not a working deployment.
+1. **Consolidate.** Collapse the four clients into `src/forge/github/` —
+   a directory, not a file: the naive union of the four already exceeds the
+   500-line budget, so the tree arrives decomposed (http core, error
+   classifier, retry policy as separate modules). One header builder, one
+   reader set, one retry policy, one `ForgeError` taxonomy. No contract
+   yet, no behavior change. Article II applies: nothing is grandfathered at
+   birth, and the tests land in the same PR — the coverage ratchet
+   (91.85% lines) does not fund an untested tree. The consolidated client
+   keeps the injected-`fetch` convention the four clients already share,
+   and the shared `recordingFetch` test helper is promoted with it.
+2. **Cut the contract.** Land `Forge`, `ForgeCapabilities`, the registry
+   (§1.1), and `FakeForge` as implementation #2 in the same PR as the
+   `check:layers` rule pair — a `forbidPattern` rule on the
+   `api.github.com` literal and a `forbidImports` twin, modeled on the
+   burrow boundary pair — that fails direct GitHub access outside
+   `src/forge/`. PHILOSOPHY rule 4 holds that a seam is not done until a
+   gate enforces it. Note `check:layers` walks `src` and `extensions` only:
+   scenario 35 must migrate onto the seam or `WALK_ROOTS` must widen, but
+   the literal in `scripts/` cannot be left silently unenforced.
+3. **Migrate the call sites.** Move the wire vocabulary into `src/core/wire.ts`
+   (per §2.1, including the `CheckRun` re-export fix in the CI-fixer),
+   thread `Forge` through the reap pipeline, the plan-run coordinator, and
+   the CI-fixer. The `checkRuns: false` degradation needs a new CI-fixer
+   skip reason plus a once-per-project notice — today an unsupported forge
+   is indistinguishable from a network blip. Article VI applies: this phase
+   moves files that Dockerfile entrypoints, workflow YAML, and supervisor
+   spawn paths reference, and green gates are not a working deployment.
 4. **Ship the credential story.** `GitHubApp` and `GitHubPat` as peers, the §4
    re-mint boundary, the manifest registration flow, and a heartbeat probe.
 5. **Delete the old paths.** Remove the supervisor's global rewrite, close the
@@ -437,12 +562,11 @@ trackers through the bridge stays parked (§3, `extensions.md` §5). Whether the
 K8s Secret fallback and the salvage push move to the callback or accept a
 PAT-only degradation stays open (§4.1).
 
-**The go/no-go this unblocks.** ROADMAP Next item 1 holds that implementation
-starts on an explicit owner decision, and the 2026-07-29 planning record still
-lists that call as OPEN. This document is the input to it, not the decision.
-The two facts most likely to move the answer are the corrected file count in
-§6.2 and the PAT Checks gap in §6.7. One doubles the migration surface. The
-other decides whether "PAT is a permanent peer" survives contact with the API.
+**The go/no-go: decided.** ROADMAP Next item 1 held that implementation
+starts on an explicit owner decision; the owner recorded **GO on
+2026-08-11**, after an eight-track audit of HEAD re-verified this document's
+§6 ground truth (the corrected file count held at 66, and the PAT Checks gap
+stands). The campaign's work queue is the seeds plan created the same day.
 
 **Downstream consumer.** The analytics campaign blocks on this seam by the
 2026-08-08 decision, and its merge-watcher is the first non-plan-run consumer
