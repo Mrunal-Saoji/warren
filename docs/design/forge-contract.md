@@ -545,17 +545,33 @@ reduction for almost none of the behavior change.
 5. **Delete the old paths.** Remove the supervisor's global rewrite, close the
    three no-credential push sites, and drop the static-token config fields.
 
-**Four questions need an empirical answer before phase 4 locks.** GitHub
-documents none of them:
+**The four phase-4 questions, answered empirically (2026-08-11).** The spike
+ran against a throwaway App (id 4560297) and a scratch repo, per seed
+warren-bc4c. GitHub documents none of these, so each answer carries its
+observed evidence:
 
-- **Q1.** Does the manifest `redirect_url` accept a loopback address? The whole
-  self-hosted registration story depends on it, and a deployment behind NAT has
-  no public URL.
-- **Q2.** Does `POST /app-manifests/{code}/conversions` require authentication,
-  and is the code single-use?
-- **Q3.** Does a fine-grained PAT reach `PUT /pulls/:n/merge`? Settle it with
-  the `X-Accepted-GitHub-Permissions` response header.
-- **Q4.** Can an App approve a pull request it authored?
+- **Q1 — loopback `redirect_url`: YES.** A manifest with
+  `redirect_url: http://127.0.0.1:8377/callback` was accepted. After "Create
+  GitHub App" the browser landed on the loopback with `?code=…&state=…`, and
+  the state round-tripped intact. Self-hosted registration behind NAT works.
+- **Q2 — conversion auth: NONE, and the code is single-use.**
+  `POST /app-manifests/{code}/conversions` with no Authorization header
+  returned 201 with the full credential set: id, slug, pem, client id and
+  secret. The identical second call returned 404. The registration flow has
+  no credential chicken-and-egg.
+- **Q3 — fine-grained PAT reaches merge: YES.** `PUT /pulls/:n/merge` with a
+  fine-grained PAT returned 200 `merged: true`, and
+  `X-Accepted-GitHub-Permissions: contents=write` — the merge endpoint
+  demands only contents write, not pull-requests write.
+- **Q4 — an App approving its own PR: NO.** The App-authored PR refused the
+  App's own approval: 422, "Review Can not approve your own pull request."
+  Any future auto-approve flow needs a second credential.
+
+Two bonus observations from the same spike. A live installation token
+arrived in the stateless `ghs_` format at 383 characters, so §6.9's
+no-length-assumption rule is already load-bearing. And the App installation
+token read `GET /commits/:ref/check-runs` with 200 — the §6.7 Checks
+asymmetry confirmed from the App side.
 
 **Two things this document does not decide.** Whether forges eventually follow
 trackers through the bridge stays parked (§3, `extensions.md` §5). Whether the
