@@ -1,7 +1,7 @@
 # Forge Contract — Design Spike
 
 **Status:** Approved — owner go recorded 2026-08-11 (ROADMAP Next item 1).
-Implementation may start. The seeds plan for the campaign is the work queue.
+Implementation may start. Seeds plan pl-d1c9 is the work queue.
 **Date:** 2026-08-08. **Amended:** 2026-08-11, from an eight-track audit of
 HEAD that re-verified every §6 claim and settled the four design questions
 the first draft left to house style (§1.1, §2.1, §2.2, §7).
@@ -503,7 +503,7 @@ count, not an estimate.
     auto-open-PR config is empty — scenario 35's opener assertion cannot
     pass in in-proc mode as written. CI has never noticed because it
     provisions neither of the scenario's secrets, so it always records
-    `skipped` (tracked as warren seed; see the campaign plan). The
+    `skipped`. The fix rides plan pl-d1c9 child warren-2740. The
     credential story must state, per scenario, which side owns the token.
 
 ---
@@ -566,7 +566,8 @@ PAT-only degradation stays open (§4.1).
 starts on an explicit owner decision; the owner recorded **GO on
 2026-08-11**, after an eight-track audit of HEAD re-verified this document's
 §6 ground truth (the corrected file count held at 66, and the PAT Checks gap
-stands). The campaign's work queue is the seeds plan created the same day.
+stands). The campaign's work queue is seeds plan pl-d1c9, created the same
+day: nineteen forward-chained children under umbrella seed warren-3fe7.
 
 **Downstream consumer.** The analytics campaign blocks on this seam by the
 2026-08-08 decision, and its merge-watcher is the first non-plan-run consumer

@@ -362,7 +362,9 @@ There is one bearer token, and it is not scoped or versioned (see [SECURITY.md](
 
 Rotation is coarse (edit the Secret, restart) because V1 has no token expiry or scopes.
 The restart is not optional. The public event stream builds its secret-literal matcher from `process.env` once, at the first public event, and never rebuilds it. Rotate any secret that reaches warren via env, then restart warren. Until the restart, public event projections do not redact the new value.
-Per-user identity and short-lived per-run GitHub App tokens are roadmap items (R-09, R-18).
+
+Short-lived per-run GitHub App installation tokens, minted per operation, are the Forge campaign's deliverable ([`docs/design/forge-contract.md`](design/forge-contract.md), plan pl-d1c9).
+[ROADMAP.md](../ROADMAP.md) defers per-user identity until paid — the deployment, not the user account, is warren's unit of trust.
 
 ### 2.4 Secrets you must NOT set under k8s
 
