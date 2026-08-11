@@ -10,6 +10,151 @@ Releases **0.9.10 and earlier** live in
 
 ## [Unreleased]
 
+## [0.14.1] — 2026-08-11
+
+The extensions release (plan pl-116e). `extensions/audit-log/` lands as
+the first flagship extension — a standalone Bun package inside the repo
+that talks to warren only over the public HTTP API, with a hard
+no-imports boundary in both directions. Alongside it: a spend cap on
+every dispatch surface, and a round of K8s salvage and reap repairs.
+
+### Added
+
+- **`extensions/audit-log/`, the first flagship extension** (plan
+  pl-116e). Six steps, each a standalone slice.
+  - Scaffold and repo boundary (warren-0781) — own `package.json`,
+    lockfile, tsconfig, and tests, with zero imports across the
+    `src/` ⇄ `extensions/` seam in either direction, plus a
+    `FRICTION.md` that logs what the extension surface still lacks.
+  - Cursor-tailing collector (warren-a0ff) — polls `GET /runs` and
+    tails each run's NDJSON stream with bounded `?since` / `?limit`
+    pages, checkpointing a durable per-run cursor after the sink
+    accepts each event. At-least-once delivery, exact resume across
+    restarts, per-run failure isolation.
+  - Audit store and normalization (warren-653a) — wire facts map to six
+    audit event types (`run.dispatched`, `run.started`, `run.terminal`,
+    `branch.pushed`, `pr.opened`, `run.steered`) and land in an
+    append-only SQLite store under a deterministic dedupe key, so
+    replay after a kill is an exact no-op.
+  - Export and health surface (warren-9c7c) — `GET /audit-log.jsonl`
+    pages oldest-first with no skips or duplicates across page
+    boundaries (`X-Audit-Log-Max-Id` lets an empty page checkpoint);
+    `GET /healthz` reports collector liveness and cursor lag without
+    echoing credentials; retention prunes oldest-first via
+    `AUDIT_LOG_RETENTION_MAX_ROWS` / `AUDIT_LOG_RETENTION_MAX_AGE_MS`.
+  - Container image and env contract (warren-88b8), then an end-to-end
+    smoke test with a golden export and the closing docs pass
+    (warren-c8c3).
+- **Per-dispatch USD spend cap** (warren-a63d). The mid-run cap is now
+  settable from every dispatch surface: `POST /runs`, `POST
+  /plan-runs`, `warren run --max-cost-usd`, `warren plan run
+  --max-cost-usd`, and a project-wide `maxCostUsd` default in
+  `.warren/config.yaml`. `resolveCapOverride()` in
+  `src/runs/cost-cap.ts` is the single implementation of the precedence
+  chain — dispatch override > agent `frontmatter.maxCostUsd` > project
+  default — and freezes the resolved cap onto `rendered_agent_json`
+  before the run row persists, so the event bridge sees one settled
+  ceiling. A malformed agent cap still fails open and stays visible on
+  the frozen frontmatter as evidence. Manual trigger fires and
+  `cloneFromRunId` re-runs inherit the cap; the SDK rejects `NaN` and
+  `Infinity` before serialization.
+- **Bounded non-streaming event read** (warren-17c1). `?limit=N` on
+  `GET /runs/:id/events` returns at most N events and closes, implying
+  `follow=false` even against an explicit `?follow=1`. Zero, negative,
+  and garbage values now 400 instead of hanging.
+- **`check:rls`, a static RLS gate for Postgres migrations**
+  (warren-3206). The script replays `src/db/migrations/postgres/*.sql`
+  in journal order and fails any table still live at the end of the
+  chain without `ENABLE ROW LEVEL SECURITY`. Dropped tables stop being
+  audited at their `DROP`. It rides inside the `lint` gate, because the
+  gate vocabulary is frozen. Migration `0032_enable_rls_run_inbox`
+  brings `run_inbox` — shipped without RLS in `0023` and patched by
+  hand in Supabase — back onto the migration path, so a fresh database
+  is deny-all too.
+- **`CODE_OF_CONDUCT.md`** (Contributor Covenant v2.1), with
+  enforcement reports routed through the GitHub Security Advisories
+  channel already documented in `SECURITY.md`. `AGENTS.md` gains an
+  escape hatch telling contributors and agents without the `sd` / `ml`
+  CLIs to skip the seeds/mulch bootstrap and proceed normally.
+
+### Changed
+
+- **`GET /runs/:id` wraps its resource in `{run}`** (warren-7d84).
+  Detail GETs now wrap, matching that route's own `POST` and the
+  plan-runs family, which was already internally consistent. The bare
+  shape had cost duplicate dispatches twice, when a consumer guessed
+  the wrong envelope and read all-null. **This is a wire-shape change.**
+  Consumers of `GET /runs/:id` must unwrap.
+- **The UI consumes the SDK's `readNdjsonStream`** (warren-53a7). The
+  hand-rolled second NDJSON parser in `src/ui/src/api/client.ts` is
+  gone; `readNdjsonStream` takes an injectable `errorFactory` so the
+  UI keeps its `ApiError` / `UnauthorizedError` types and its 401
+  token-clearing side effect.
+- **`RunDetail.tsx` split along section boundaries** (warren-9679) into
+  `run-detail-events`, `run-detail-preview`, `run-detail-cost`, and
+  `run-detail-format`.
+- **Auto-merge runs on a GitHub App installation token** (warren-2565).
+  The static `AUTO_MERGE_PAT` expired silently and every PR after it
+  needed a manual merge. All three consumers — `auto-merge.yml`,
+  `bundle-size-autoheal.yml`, and `release.yml` — now mint a fresh
+  token per run from `AUTO_MERGE_APP_ID` plus
+  `AUTO_MERGE_APP_PRIVATE_KEY`. The release workflow's `pat-heartbeat`
+  becomes `app-heartbeat`: a mint attempt is the whole proof, since app
+  keys carry no expiry to count down. `docs/project-setup.md` §2
+  documents the one-time app registration.
+- **Biome config moves to JSONC** (`biome.jsonc`), so the complexity
+  and filename-exception ratchets can document their own policies
+  inline.
+- **`deploy-gke.yml` threads `WARREN_GIT_AUTHOR_NAME` from repo vars**
+  (warren-2900), the same way it already read the email, instead of
+  hardcoding `warren`.
+- **`CONTRIBUTING.md` corrections** (warren-a6db) — the npm-publish
+  claim is accurate now, and the doc gained a dev loop and a
+  good-first-issue pointer.
+- Dependabot: `docker/login-action` 4.5.1 → 4.6.0.
+
+### Fixed
+
+- **A K8s run could hang in `running` forever after an agent exited
+  without a terminal envelope** (warren-9a4a). A stdin-held `pi` run
+  killed by the idle watchdog never emitted `agent_end`, so reap never
+  fired and the pod polled finalize-intent indefinitely. `runAgent`
+  now tracks terminal envelopes and synthesizes the missing
+  `agent_end` post-exit, marked `synthesized: true` with a reason.
+- **Salvage lost uncommitted work and could not push its rescue ref**
+  (warren-6016). Two gaps: the salvage windows ran without a git
+  credential, so the rescue-ref push was always skipped; and salvage
+  bundled only `base..HEAD`, so a dirty tree produced "Refusing to
+  create empty bundle". The agent container now references the
+  `warren-git-token` Secret (scrubbed from the agent child's spawn
+  env), and `collectSalvage` folds the dirty tree into the bundle.
+- **Salvage intake had no rate limit or per-run quota** (warren-adc1).
+  Intake is capped at one in-flight upload per run through the existing
+  per-key limiter; a second concurrent POST for the same run gets the
+  limiter family's 503 with `Retry-After`. Tmp-file staging is wrapped
+  in `try`/`finally`, so a failed write or rename no longer leaks up to
+  32MiB per attempt.
+- **`WARREN_FINALIZE_MAX_WAIT_MS` outranked the heartbeat watchdog**
+  (warren-9d24). The 3,000,000ms default sat above the 2,700,000ms
+  watchdog budget, so a silent intent-waiting pod could be terminalized
+  before its terminal `no_intent` salvage POST landed, which then 401'd.
+  The default drops to 2,400,000ms, with a cross-budget test pinning
+  the ordering.
+- **Oversized pull request bodies are bounded** before they reach the
+  GitHub API.
+- **The registry admitted agent names every consumer refuses**
+  (warren-2b75). Names were typed `z.string().min(1)`, so uppercase,
+  spaces, and path separators all passed. `AGENT_NAME_PATTERN` /
+  `AgentNameSchema` move to `src/registry/agent-name.ts` and are shared
+  with the config layer's `RoleNameSchema`, so registry names and role
+  names hold one grammar.
+- **The planner system prompt still promised retired `.plot/` files.**
+  Those promises are stripped.
+- **UI nav labels disagreed with page titles** (warren-6b21). The run
+  detail page also shows its project name now.
+- **The Docker `ui-builder` stage missed the client SDK files**, so a
+  UI build that imports from `src/client/` failed in CI.
+
 ## [0.14.0] — 2026-08-04
 
 The agent-facing CLI release (plan pl-882c). The CLI becomes the

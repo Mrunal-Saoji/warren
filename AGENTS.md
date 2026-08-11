@@ -246,12 +246,19 @@ CI would reject. `check:ci-parity` proves the local manifest and the CI
 workflow agree in both directions. Per-repo escape hatches live in
 `scripts/ci-parity-config.json`.
 
-Four repo-specific guards ride inside the `lint` gate rather than
+Six repo-specific guards ride inside the `lint` gate rather than
 taking a manifest slot, because the canonical gate vocabulary is
-frozen. They are `scripts/check-layers.ts`,
-`scripts/check-version-sync.ts`, `scripts/check-wire-types.ts`, and
-`scripts/check-prose.ts`. Each also runs standalone under the matching
-`check:` script name.
+frozen. Each also runs standalone under the matching `check:` script
+name.
+
+- `scripts/check-layers.ts`, `scripts/check-version-sync.ts`,
+  `scripts/check-wire-types.ts`, `scripts/check-prose.ts`
+- `scripts/check-seeds-integrity.ts` (warren-a71f) — catches duplicate
+  and contradictory rows in `.seeds/issues.jsonl`, the shape a git
+  auto-merge leaves behind
+- `scripts/check-rls.ts` (warren-3206) — replays the Postgres
+  migrations in journal order and fails any still-live table without
+  `ENABLE ROW LEVEL SECURITY`
 
 `gen:cli-ref:check` rides the same gate and holds the generated CLI
 reference in place.
@@ -410,7 +417,7 @@ Two guards hold the rule, and both run inside `bun run lint`.
   prints `file:line` plus the rule's `why`. A deliberate exception goes
   in that rule's `allow` list with a `why` field.
 
-Seven seams ship today:
+Nine seams ship today:
 
 - The two burrow boundaries inherited from the retired burrow-boundary
   guard (warren-f796). No direct `src/burrow-client/` or
@@ -422,6 +429,9 @@ Seven seams ship today:
 - `src/server/handlers/**` must not import `src/db/schema/**` and must
   not build a repo out of `deps.db`. Use the boot-wired seams
   `deps.repos`, `deps.dbAdapter`, and `deps.runPreviews`.
+- `extensions/**` must not import `src/**` or `scripts/**`, and neither
+  may import `extensions/**`. The seam is symmetric on purpose. See
+  "Extensions" below.
 - `src/core/` may import only itself.
 
 Two sharp edges:
@@ -535,6 +545,26 @@ observe-only process singleton that run-lifecycle call sites emit into.
 Proof consumers are the healer (`src/healer/lifecycle.ts`) and the
 seed-close reap hook (`src/runs/reap/seed-close-lifecycle.ts`). See
 [docs/design/tier1-observation-bus.md](docs/design/tier1-observation-bus.md).
+
+## Extensions
+
+`extensions/` holds out-of-process packages built against warren's
+published HTTP surface only. Each one is standalone: own
+`package.json`, own lockfile, own tsconfig, own tests.
+
+An extension never imports `src/` or `scripts/`, and core never
+imports it. `check:layers` enforces both directions, because an import
+either way compiles the extension into core and makes its removal
+breaking.
+
+The flagship is `extensions/audit-log/` (plan pl-116e), a collector
+that tails run events, normalizes them into an append-only audit log,
+and exports it over `GET /audit-log.jsonl`.
+
+`extensions/audit-log/FRICTION.md` logs every place the extension
+author had to work around a missing warren surface, and that list is
+the spec for warren's delivery mechanism. Add to it when you hit a new
+one. See [docs/design/extensions.md](docs/design/extensions.md).
 
 ## Golden snapshots
 
