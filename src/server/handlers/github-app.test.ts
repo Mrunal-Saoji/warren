@@ -43,7 +43,7 @@ describe("registerGitHubAppHandler", () => {
 		expect(html).toContain(`${BASE}/github-app/callback`);
 		expect(html).toContain("nonce-1");
 		expect(html).toContain("warren-forge-abc123");
-		expect(html).toContain('action="https://github.com/settings/apps/new"');
+		expect(html).toContain('action="https://github.com/settings/apps/new?state=nonce-1"');
 	});
 
 	test("?name= overrides the generated App name", async () => {
@@ -69,7 +69,9 @@ describe("registerGitHubAppHandler", () => {
 		});
 		const res = await handler(ctxFor(`${BASE}/github-app/register?org=os-eco`));
 		const html = await res.text();
-		expect(html).toContain('action="https://github.com/organizations/os-eco/settings/apps/new"');
+		expect(html).toContain(
+			'action="https://github.com/organizations/os-eco/settings/apps/new?state=nonce-1"',
+		);
 	});
 
 	test("an implausible ?org= is refused with 400", async () => {

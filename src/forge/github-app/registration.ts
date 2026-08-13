@@ -6,14 +6,19 @@
  * ever hand-assembling an App in the GitHub UI:
  *
  *   1. `GET /github-app/register` renders a page carrying an App MANIFEST
- *      (name, homepage, loopback `redirect_url`, a random `state`, and the
- *      permission set the forge needs) as a single form field. Pressing the
- *      button POSTs the manifest to GitHub's "Create GitHub App" endpoint.
+ *      (name, homepage, loopback `redirect_url`, and the permission set the
+ *      forge needs) as a single form field. The random `state` nonce rides
+ *      the form's ACTION URL as a query parameter — GitHub's manifest
+ *      schema rejects a `state` key inside the manifest itself
+ *      (`"state" is not a permitted key`, hit live 2026-08-13). Pressing
+ *      the button POSTs the manifest to GitHub's "Create GitHub App"
+ *      endpoint.
  *   2. GitHub creates the App under the operator's own account and redirects
  *      the browser to the manifest's `redirect_url` — warren's
  *      `GET /github-app/callback` — with `?code=…&state=…`. Q1 (spike
- *      warren-bc4c): a loopback `redirect_url` IS accepted and `state`
- *      round-trips intact, so the local-operator flow works behind NAT.
+ *      warren-bc4c): a loopback `redirect_url` IS accepted and the
+ *      query-parameter `state` round-trips intact, so the local-operator
+ *      flow works behind NAT.
  *   3. The callback validates `state` against the single-use,
  *      short-TTL {@link RegistrationSessions} store, then converts the code:
  *      `POST /app-manifests/{code}/conversions`. Q2 (same spike): that call
@@ -56,12 +61,17 @@ export const GITHUB_APP_MANIFEST_PERMISSIONS = {
 	metadata: "read",
 } as const;
 
-/** The manifest POSTed to GitHub's create page (a subset of its schema). */
+/**
+ * The manifest POSTed to GitHub's create page (a subset of its schema).
+ * Deliberately NO `state` field: GitHub validates the manifest against a
+ * closed schema and refuses unknown keys — the CSRF nonce travels as a
+ * `?state=` query parameter on the create URL instead (see
+ * {@link renderRegistrationPage}).
+ */
 export interface GitHubAppManifest {
 	readonly name: string;
 	readonly url: string;
 	readonly redirect_url: string;
-	readonly state: string;
 	readonly public: boolean;
 	readonly default_permissions: typeof GITHUB_APP_MANIFEST_PERMISSIONS;
 }
@@ -70,13 +80,11 @@ export function buildGitHubAppManifest(input: {
 	readonly name: string;
 	readonly homepageUrl: string;
 	readonly redirectUrl: string;
-	readonly state: string;
 }): GitHubAppManifest {
 	return {
 		name: input.name,
 		url: input.homepageUrl,
 		redirect_url: input.redirectUrl,
-		state: input.state,
 		// Private by default: the App exists to serve this one warren
 		// deployment, and a public App is installable by anyone.
 		public: false,
@@ -280,21 +288,25 @@ ${body}
 
 /**
  * The register page: the manifest rides a single hidden `manifest` form
- * field; pressing the button POSTs it to GitHub's create page. No inline
- * script — the page's CSP forbids it, and a visible button means the
+ * field; pressing the button POSTs it to GitHub's create page. The CSRF
+ * `state` nonce goes on the action URL as a query parameter — GitHub echoes
+ * it back on the callback redirect but refuses it inside the manifest. No
+ * inline script — the page's CSP forbids it, and a visible button means the
  * operator sees exactly what is about to be created before they commit.
  */
 export function renderRegistrationPage(input: {
 	readonly manifest: GitHubAppManifest;
 	readonly createUrl: string;
+	readonly state: string;
 }): string {
 	const manifestJson = escapeHtml(JSON.stringify(input.manifest));
+	const actionUrl = `${input.createUrl}?state=${encodeURIComponent(input.state)}`;
 	const body = `<h1>Register a GitHub App for warren</h1>
 <p>This form creates a private GitHub App under your account with exactly the
 permissions warren's App forge needs (contents: write, pull-requests: write,
 checks: read). Pressing the button hands this manifest to GitHub:</p>
 <pre>${escapeHtml(JSON.stringify(input.manifest, null, 2))}</pre>
-<form method="post" action="${escapeHtml(input.createUrl)}">
+<form method="post" action="${escapeHtml(actionUrl)}">
 <input type="hidden" name="manifest" value="${manifestJson}">
 <button type="submit">Create the GitHub App on github.com</button>
 </form>

@@ -115,11 +115,10 @@ export function registerGitHubAppHandler(options: GitHubAppHandlerOptions = {}):
 			name,
 			homepageUrl: WARREN_HOMEPAGE_URL,
 			redirectUrl: `${ctx.url.origin}/github-app/callback`,
-			state,
 		});
 		const createUrl =
 			org === null ? GITHUB_APP_MANIFEST_CREATE_URL : gitHubOrgManifestCreateUrl(org);
-		return htmlResponse(200, renderRegistrationPage({ manifest, createUrl }));
+		return htmlResponse(200, renderRegistrationPage({ manifest, createUrl, state }));
 	};
 }
 

@@ -14,18 +14,16 @@ import {
 } from "./registration.ts";
 
 describe("buildGitHubAppManifest", () => {
-	test("packs the redirect, state, and the forge's permission set", () => {
+	test("packs the redirect and the forge's permission set, with NO state key", () => {
 		const manifest = buildGitHubAppManifest({
 			name: "warren-test",
 			homepageUrl: "https://example.test/",
 			redirectUrl: "http://127.0.0.1:8377/github-app/callback",
-			state: "nonce-1",
 		});
 		expect(manifest).toEqual({
 			name: "warren-test",
 			url: "https://example.test/",
 			redirect_url: "http://127.0.0.1:8377/github-app/callback",
-			state: "nonce-1",
 			public: false,
 			default_permissions: GITHUB_APP_MANIFEST_PERMISSIONS,
 		});
@@ -175,20 +173,22 @@ describe("escapeHtml", () => {
 });
 
 describe("renderRegistrationPage", () => {
-	test("carries the manifest as the form's hidden field and posts to GitHub", () => {
+	test("carries the manifest as the form's hidden field and the state on the action URL", () => {
 		const manifest = buildGitHubAppManifest({
 			name: "warren-test",
 			homepageUrl: "https://example.test/",
 			redirectUrl: "http://127.0.0.1:8377/github-app/callback",
-			state: "nonce-1",
 		});
 		const html = renderRegistrationPage({
 			manifest,
 			createUrl: GITHUB_APP_MANIFEST_CREATE_URL,
+			state: "nonce-1",
 		});
-		expect(html).toContain('action="https://github.com/settings/apps/new"');
+		expect(html).toContain('action="https://github.com/settings/apps/new?state=nonce-1"');
 		expect(html).toContain('name="manifest"');
-		expect(html).toContain("&quot;state&quot;:&quot;nonce-1&quot;");
+		// GitHub's manifest schema refuses a state key — it must never appear
+		// inside the manifest JSON (hit live 2026-08-13).
+		expect(html).not.toContain("&quot;state&quot;");
 		expect(html).toContain("http://127.0.0.1:8377/github-app/callback");
 	});
 
@@ -197,11 +197,11 @@ describe("renderRegistrationPage", () => {
 			name: '"><script>alert(1)</script>',
 			homepageUrl: "https://example.test/",
 			redirectUrl: "http://127.0.0.1:8377/github-app/callback",
-			state: "nonce-1",
 		});
 		const html = renderRegistrationPage({
 			manifest,
 			createUrl: GITHUB_APP_MANIFEST_CREATE_URL,
+			state: "nonce-1",
 		});
 		expect(html).not.toContain("<script>alert(1)</script>");
 	});
