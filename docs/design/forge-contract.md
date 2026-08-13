@@ -581,6 +581,12 @@ observed evidence:
   `redirect_url: http://127.0.0.1:8377/callback` was accepted. After "Create
   GitHub App" the browser landed on the loopback with `?code=…&state=…`, and
   the state round-tripped intact. Self-hosted registration behind NAT works.
+  *Amended 2026-08-13:* the round-trip holds only for `state` passed as a
+  query parameter on the create URL (`/settings/apps/new?state=…`). A
+  `state` key INSIDE the manifest JSON is refused by the live create page
+  (`"state" is not a permitted key` — the manifest schema is closed), which
+  the first real registration against app.warren.run hit; fixed in
+  `0deb9511`.
 - **Q2 — conversion auth: NONE, and the code is single-use.**
   `POST /app-manifests/{code}/conversions` with no Authorization header
   returned 201 with the full credential set: id, slug, pem, client id and
