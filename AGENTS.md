@@ -417,7 +417,7 @@ Two guards hold the rule, and both run inside `bun run lint`.
   prints `file:line` plus the rule's `why`. A deliberate exception goes
   in that rule's `allow` list with a `why` field.
 
-Nine seams ship today:
+Eleven seams ship today:
 
 - The two burrow boundaries inherited from the retired burrow-boundary
   guard (warren-f796). No direct `src/burrow-client/` or
@@ -432,6 +432,11 @@ Nine seams ship today:
 - `extensions/**` must not import `src/**` or `scripts/**`, and neither
   may import `extensions/**`. The seam is symmetric on purpose. See
   "Extensions" below.
+- The two forge boundaries (plan pl-d1c9). Only `src/forge/**` may
+  speak the GitHub REST API (`api.github.com` literals), and only
+  `src/forge/**` may import the `src/forge/github/` transport core.
+  Everything else consumes the boot-resolved `Forge` instance. See
+  [docs/design/forge-contract.md](docs/design/forge-contract.md).
 - `src/core/` may import only itself.
 
 Two sharp edges:

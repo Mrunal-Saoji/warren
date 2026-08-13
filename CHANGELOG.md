@@ -10,6 +10,75 @@ Releases **0.9.10 and earlier** live in
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-08-13
+
+The Forge release (plan pl-d1c9, 19 steps). Every GitHub call warren
+makes — opening PRs, checking merges, reading CI, pushing branches —
+now goes through a single boot-resolved **Forge** seam, and warren can
+authenticate as a **GitHub App** instead of a personal access token.
+Alongside the campaign: mid-run salvage for provider failures, a
+finalize-recovery path for K8s control-plane restarts, and honest
+steering feedback for the pi agent.
+
+### Added
+
+- **The Forge seam** (`src/forge/`) — one contract in front of every
+  GitHub interaction, resolved once at boot via `WARREN_FORGE` and
+  threaded through `ServerDeps` (#831, #832, #833).
+  - A shared `src/forge/github/` transport core replaces four drifted
+    inline GitHub REST clients: `pr.ts`/`pr-checks.ts`,
+    `pr-annotate.ts`, the CI-fixer's `check-runs.ts`, and acceptance
+    scenario 35's inline client (#822, #824–#827).
+  - The reap pipeline, plan-run merge gate, and CI-fixer + scheduler
+    all consume the seam instead of raw tokens (#834–#836).
+  - **FakeForge**, an in-memory provider with a state-file seam, plus
+    acceptance scenario 40 — a full dispatch→PR roundtrip with no real
+    GitHub — now wired into the nightly list (#831, #838).
+  - A `check:layers` rule pair holds the boundary: nothing outside
+    `src/forge/` may speak GitHub REST directly.
+- **GitHub App mode** (forge phase 4). The `GitHubApp` provider mints
+  installation tokens from an App JWT with an in-process cache and
+  capability flags (#840). Per-spawn minted credentials close the
+  three formerly credential-free push sites (#839). K8s clone and
+  push windows mint fresh short-lived tokens at pod-spec time, with a
+  gated static-token fallback (#841). A credential heartbeat probe
+  runs inside warren (#843). A manifest-based registration flow with
+  operator docs gets a new App set up in one pass (#842), requests
+  `workflows:write`, and carries its state nonce as a query parameter.
+  The base K8s Deployment wires the four App-mode env vars.
+
+### Changed
+
+- The supervisor no longer rewrites the global gitconfig with a
+  static token; the old static-token config paths are deleted
+  (forge phase 5, #844). Credentials are per-spawn and short-lived.
+- The pull-request vocabulary (state, merge outcome) moved into
+  `src/core/wire.ts` alongside the rest of the wire types (#823).
+- The anonymous GitHub-App registration surface is existence-gated
+  and its nonce store capped, so an unconfigured instance exposes no
+  unbounded outbound conversion endpoint (warren-e320, #852).
+
+### Fixed
+
+- A run that fails with `provider_error` mid-work no longer discards
+  its uncommitted changes: the K8s finalize path salvages the
+  workspace and pushes what the agent had written (#850).
+- A control-plane pod replacement mid-run no longer deadlocks the
+  agent on finalize: a recovery path re-adopts orphaned finalize
+  requests after restart (#853).
+- `POST /runs/:id/steer` no longer reports `steer.sent` for the pi
+  agent when nothing was delivered — the steering inbox vocabulary
+  now distinguishes delivered from dropped (#854).
+- PRs touching `.seeds/issues.jsonl` no longer sit CONFLICTING on
+  GitHub: a driver-aware self-heal workflow merges them (#845), with
+  its `gh` calls made repo-explicit via `GH_REPO` (#851), and a guard
+  keeps `sd doctor` from re-adding the lossy `merge=union` attribute
+  (#829, #830).
+- Reap keeps the linked seed open when a run produced no commits, so
+  empty runs stop silently closing tracker issues (#837).
+- `identity.test.ts` no longer writes into the developer's real
+  `.git/config` (warren-8664, #821).
+
 ## [0.14.1] — 2026-08-11
 
 The extensions release (plan pl-116e). `extensions/audit-log/` lands as
