@@ -53,12 +53,22 @@ export function gitHubOrgManifestCreateUrl(orgLogin: string): string {
  * push branches and open/edit PRs (`contents` + `pull_requests` write) and
  * read the Checks API (`checks` read — the asymmetry a fine-grained PAT
  * can't cross). `metadata` read is implicit on every App.
+ *
+ * `workflows` write: GitHub rejects ANY App-token push that creates or
+ * updates a file under `.github/workflows/` unless the App holds it —
+ * the whole push is refused, not just the workflow file. Agents
+ * legitimately author workflows (run_qfc0xxgytf1p lost its branch to
+ * this on the first dogfood day, 2026-08-13); a classic PAT's `workflow`
+ * scope covered it silently in PAT mode. Operators of an App registered
+ * before this permission was added must grant it in the App's settings
+ * AND approve the permission request on the installation.
  */
 export const GITHUB_APP_MANIFEST_PERMISSIONS = {
 	contents: "write",
 	pull_requests: "write",
 	checks: "read",
 	metadata: "read",
+	workflows: "write",
 } as const;
 
 /**
@@ -304,7 +314,8 @@ export function renderRegistrationPage(input: {
 	const body = `<h1>Register a GitHub App for warren</h1>
 <p>This form creates a private GitHub App under your account with exactly the
 permissions warren's App forge needs (contents: write, pull-requests: write,
-checks: read). Pressing the button hands this manifest to GitHub:</p>
+workflows: write, checks: read). Pressing the button hands this manifest to
+GitHub:</p>
 <pre>${escapeHtml(JSON.stringify(input.manifest, null, 2))}</pre>
 <form method="post" action="${escapeHtml(actionUrl)}">
 <input type="hidden" name="manifest" value="${manifestJson}">

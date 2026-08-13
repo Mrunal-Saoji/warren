@@ -29,12 +29,13 @@ describe("buildGitHubAppManifest", () => {
 		});
 	});
 
-	test("the permission set is contents+pull-requests write, checks read", () => {
+	test("the permission set is contents+pull-requests+workflows write, checks read", () => {
 		expect(GITHUB_APP_MANIFEST_PERMISSIONS).toEqual({
 			contents: "write",
 			pull_requests: "write",
 			checks: "read",
 			metadata: "read",
+			workflows: "write",
 		});
 	});
 });
