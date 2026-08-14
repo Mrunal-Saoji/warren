@@ -532,12 +532,8 @@ export interface RunAnalyticsTotals {
 	cancelled: number;
 	active: number;
 	successRate: number | null;
-	/**
-	 * Landed-work rollup (warren-bd57): `prStateKnown` rows carry a resolved
-	 * PR lifecycle (the merge-rate denominator — NULL `pr_state` rows are
-	 * unknown, never failures), `prsMerged` of them merged. Rate is null
-	 * when no run in the window has a resolved PR state.
-	 */
+	/** Landed-work rollup (warren-bd57): the merge-rate denominator — NULL
+	 * `pr_state` is unknown, never a failure. Null when nothing resolved. */
 	prStateKnown: number;
 	prsMerged: number;
 	mergedPrRate: number | null;
@@ -701,6 +697,9 @@ export interface RunBehaviorResponse {
 	filter: { projectId: string | null; from: string | null; to: string | null };
 	mining: CommandMining;
 	insights: Insight[];
+	/** warren-7746: true when the rollup read hit its row cap — rankings
+	 * then cover a bounded prefix. Reported, never silent. */
+	truncated: boolean;
 }
 
 export const runAnalyticsApi = {
