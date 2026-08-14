@@ -25,6 +25,9 @@
  *     merged-PR rates, denominators + confidence attached
  *   - `cost-per-merged-pr` (warren-be04): total priced cost over merged-PR
  *     count, overall with the priciest bucket named
+ *   - `context-waste-proxy` (warren-6d41): the tool whose tool_result byte
+ *     share of run context tokens dominates — a byte-size proxy, not
+ *     per-turn usage deltas, and the payload says so
  *
  * NOTE: the `steering-anomaly` callout fires only when a caller passes the
  * optional {@link SteeringSignals} bundle. The `GET /analytics/behavior`
@@ -46,7 +49,10 @@
 
 import type { InsightConfidence } from "../../core/wire.ts";
 import type { CommandMining, CommandStat } from "./command-mining.ts";
-import type { DirectoryDifficulty, DirectoryStat } from "./directory-difficulty.ts";
+import type { ContextWasteProxy } from "./context-waste.ts";
+import type { DirectoryDifficulty } from "./directory-difficulty.ts";
+import { contextWasteProxy } from "./insights-context-waste.ts";
+import { hardestDirectory } from "./insights-directory.ts";
 import type { RunOutcomes } from "./outcome-analytics.ts";
 import type { RunGroupBucket, RunMetrics } from "./run-metrics.ts";
 
@@ -65,6 +71,7 @@ export type InsightKind =
 	| "steering-anomaly"
 	| "steering-outcome-delta"
 	| "cost-per-merged-pr"
+	| "context-waste-proxy"
 	| "hardest-directory";
 
 export interface Insight {
@@ -118,6 +125,13 @@ export interface InsightsInput {
 	 */
 	readonly outcomes?: RunOutcomes;
 	/**
+	 * Context-waste proxy rollup (warren-6d41) — tool_result byte shares
+	 * against run context tokens from the `tool_calls` rollup. When
+	 * supplied, `buildInsights` also derives the `context-waste-proxy`
+	 * callout. The `GET /analytics/behavior` handler supplies it.
+	 */
+	readonly contextWaste?: ContextWasteProxy;
+	/**
 	 * Per-directory difficulty rollup (warren-8f1b). Optional like
 	 * `steering`: when omitted the `hardest-directory` callout is
 	 * skipped. Directories carry their own denominators + confidence.
@@ -143,13 +157,8 @@ const MIN_MODELS_FOR_OUTLIER = 2;
 /** Share-of-runs thresholds for the steering anomaly. */
 const STEERING_CRITICAL_SHARE = 0.5;
 const STEERING_WARNING_SHARE = 0.25;
-/** Difficulty-score thresholds for the hardest-directory callout. */
-const DIRECTORY_WARNING_SCORE = 0.5;
-const DIRECTORY_CRITICAL_FAILURE_SHARE = 0.5;
-
 /** Minimum resolved-PR rows per cohort before a delta is worth reporting. */
 const MIN_OUTCOME_COHORT_KNOWN = 3;
-
 const KIND_ORDER: readonly InsightKind[] = [
 	"worst-success-agent",
 	"most-retried-command",
@@ -158,6 +167,7 @@ const KIND_ORDER: readonly InsightKind[] = [
 	"cost-per-merged-pr",
 	"steering-outcome-delta",
 	"steering-anomaly",
+	"context-waste-proxy",
 	"hardest-directory",
 	"highest-context-seed",
 ];
@@ -287,33 +297,6 @@ function steeringAnomaly(s: SteeringSignals): Insight | null {
 		detail: `${s.runsSteered} of ${s.totalRuns} run(s) (${pct(share)}) needed mid-run steering — ${s.steeringMessages} message(s) total.`,
 		value: share,
 		subject: null,
-	};
-}
-
-/**
- * The hardest-directory callout (warren-8f1b): the ranked directory with
- * the highest difficulty score, when it clears the warning threshold and
- * shows real struggle evidence (a failed run or a retry — a zero-evidence
- * top scorer is noise). The detail carries the denominators and the
- * confidence qualifier inline, per the plan's insight discipline.
- */
-function hardestDirectory(directories: DirectoryDifficulty): Insight | null {
-	let top: DirectoryStat | undefined;
-	for (const d of directories.directories) {
-		if (d.runsFailed === 0 && d.retries === 0) continue;
-		if (top === undefined || d.difficultyScore > top.difficultyScore) top = d;
-	}
-	if (top === undefined || top.difficultyScore < DIRECTORY_WARNING_SCORE) return null;
-	const share = top.failureShare ?? 0;
-	return {
-		kind: "hardest-directory",
-		severity: share >= DIRECTORY_CRITICAL_FAILURE_SHARE ? "critical" : "warning",
-		title: "Hardest directory",
-		detail: `"${top.directory}" — ${top.runsFailed} of ${top.runsTouching} run(s) touching it failed; ${top.retries} error-retr${
-			top.retries === 1 ? "y" : "ies"
-		} across ${top.fileTouches} file touch(es), ${top.steeringMessages} steering message(s) (confidence: ${top.confidence}; ${directories.totals.runsWithFilePaths} of ${directories.totals.runsInWindow} run(s) in window have file data).`,
-		value: top.difficultyScore,
-		subject: top.directory,
 	};
 }
 
@@ -487,6 +470,9 @@ export function buildInsights(input: InsightsInput): Insight[] {
 	}
 	if (directories !== undefined) {
 		candidates.push(hardestDirectory(directories));
+	}
+	if (input.contextWaste !== undefined) {
+		candidates.push(contextWasteProxy(input.contextWaste));
 	}
 	const insights = candidates.filter((i): i is Insight => i !== null);
 	insights.sort(compareInsights);

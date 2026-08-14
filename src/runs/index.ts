@@ -18,6 +18,11 @@ export {
 	type ToolCallMiningRow,
 } from "./analytics/command-mining.ts";
 export {
+	buildContextWaste,
+	type ContextWasteProxy,
+	type ContextWasteShare,
+} from "./analytics/context-waste.ts";
+export {
 	buildDirectoryDifficulty,
 	DEFAULT_DIRECTORY_LIMIT,
 	type DirectoryDifficulty,
