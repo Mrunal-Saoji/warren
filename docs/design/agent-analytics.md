@@ -12,6 +12,10 @@ direction record rather than a locked contract.
 **Amended:** 2026-08-11 — the Forge campaign got its owner go
 ([`forge-contract.md`](./forge-contract.md), plan pl-d1c9), which is
 the ordering precondition §11 names.
+**Amended:** 2026-08-12 — §12 records the owner's judge-layer
+decisions: heuristics **and** LLM judges, both on every run;
+extension-first placement with a named in-core exit. Open question 3
+is resolved, and question 1 gets a recorded leaning.
 **Grounds:** [`PHILOSOPHY.md`](../PHILOSOPHY.md) operating rules 1, 2,
 5, and 6; [`ROADMAP.md`](../../ROADMAP.md) Next items 1, 2, and 6;
 [`tier1-observation-bus.md`](./tier1-observation-bus.md);
@@ -277,12 +281,18 @@ their deployment, which is a real difference from SaaS observability.
 1. Where is the core/extension line for the analytics engine? Does
    `/analytics/*` stay as the thin in-core default while the deep
    engine goes Tier-1, or does the engine subsume the endpoints?
+   *A leaning is recorded in §12.1: extension first, moved in-core
+   only if the batteries-included default proves hollow without it.*
 2. Does the corpus need a derived star schema (runs × tool calls ×
    files × outcomes) in the extension's store, or is on-demand event
    scanning enough at team scale? The 20k-row cap says scanning already
    strains.
-3. Behavioral failure taxonomy: mined heuristically (cheap, coarse) or
-   LLM-judged over transcripts (expensive, rich)? Probably staged.
+3. ~~Behavioral failure taxonomy: mined heuristically (cheap, coarse)
+   or LLM-judged over transcripts (expensive, rich)? Probably
+   staged.~~ **Resolved 2026-08-12 (§12): both, as permanent layers,
+   each on every run.** Heuristics stay near-free in core. Judges run
+   a cheap model at full coverage; cost is controlled by model
+   choice, not by sampling.
 4. Context-waste scoring: is `tool_result` byte size against context
    tokens a good-enough v0 proxy, or does it need per-turn usage deltas
    that only some harnesses can emit?
@@ -351,6 +361,147 @@ consumer instead of retrofitted into one. That campaign got its go on
 - Only then the decide and regulate rungs: recommendations first, then
   policy gates — the roadmap's named first payer for Tier-2 mutating
   hooks.
+
+## 12. The judge layer — LLM judges beside the heuristics
+
+Added 2026-08-12 from an owner conversation. Open question 3 asked
+whether behavioral failure classification is mined heuristically or
+LLM-judged over transcripts. The recorded answer is **both, as two
+permanent layers**, not a staged migration — plus the coverage and
+placement decisions below. As with the rest of this record, the
+decisions are the owner's and the mechanism sketches are provisional.
+
+### 12.1 Decisions recorded (2026-08-12, owner)
+
+- **Both layers, every run.** Heuristics run on every run. They are
+  near-free and already exist in embryo (`stuckScore`, retry
+  clusters, the six insight callouts). Judges **also run on every
+  run**, not a sampled subset. The corpus thesis (§1) is the reason:
+  an unjudged run is a hole in the corpus, and the join only
+  compounds if coverage is total. Cost is controlled by model
+  choice, not by coverage — the judge defaults to a cheap model, and
+  a transcript classification costs cents against a sandboxed run's
+  dollars.
+- **Extension first, with a named exit.** The judge ships inside the
+  analytics observer extension (§6 layer 3), because PHILOSOPHY's
+  litmus test sorts interpretation out of core and this direction
+  should follow its own rules. The recorded caveat: if the analytics
+  pillar turns out to have no batteries-included value without the
+  judge — if warren-without-the-extension is not honestly useful —
+  the executor moves in-core, the same posture as seeds-in-core
+  against trackers-as-extensions. That call is deferred to the
+  Phase 4 boundary. It partially answers open question 1.
+
+### 12.2 The judge is a function, not a run
+
+The tempting shape is a ninth builtin agent beside nightwatch and
+bugwatch, dispatched through the run primitive. Rejected. The run
+primitive exists to sandbox code execution against a repo: clone,
+burrow or pod, branch push. A judge executes no code, touches no
+filesystem, and needs no repo. Its input is a transcript warren
+already holds, and its output is one structured verdict. Sandboxing
+it is pure overhead, and judge runs would pollute the very corpus
+they analyze (or need a recursion guard to exclude themselves).
+
+The shape instead: a bounded agent loop — the pi SDK is the natural
+in-ecosystem driver, though the loop is simple enough that any
+provider SDK would serve — with the default tool set stripped to
+nothing and replaced by:
+
+- **Read tools, paging, read-only.** Run facts (outcome, failure
+  reason, cost, PR state — the ground truth) and a cursor over the
+  run's `NormalizedEvent` rows. Transcripts routinely exceed a
+  context window, which is the one thing that stops the judge from
+  being a single forced-tool-choice completion. As an extension,
+  these tools are views over warren's published HTTP surface
+  (`GET /runs/:id`, the events endpoint), never the DB — the
+  extensions seam already forces the honest boundary.
+- **One write tool.** `report_verdict`, schema-forced; calling it
+  ends the loop. The verdict lands in the extension's own store,
+  never in a core table.
+
+The judge holds no mutation capability of any kind. The constraint
+is the design: its entire tool surface is "page the transcript, emit
+a verdict."
+
+### 12.3 The verdict shape (candidates, not columns)
+
+A verdict is an interpretation, not a fact, so provenance is
+mandatory:
+
+- The taxonomy classes assigned — **multi-label**, a run can be
+  `spin_loop` and `env_fumble` at once — each with a confidence.
+- **Evidence pointers:** event sequence ranges, not prose.
+  "`spin_loop`, events 340–612" is auditable. A paragraph is not.
+- **Provenance:** judge model id, rubric version (a hash of prompt +
+  taxonomy), judged-at, and the cost of the judgment itself.
+- Re-judging under a new rubric version **appends** a verdict, never
+  overwrites one. Trend lines that mix rubric versions are suspect
+  by default, and the version field is what lets a query refuse the
+  mix.
+
+### 12.4 Behavioral failure taxonomy — draft candidates
+
+A starting list to cut down, deliberately over-provisioned per the
+owner's ask. The classes are behavioral and orthogonal to
+`RUN_FAILURE_REASONS` (infrastructure). Admission rule: a class must
+be evidence-pointable to event ranges, or it does not belong.
+Multi-label by design.
+
+| Class | Meaning |
+|---|---|
+| `clean` | No behavioral failure. The baseline class, so every denominator exists. |
+| `wrong_approach` | Coherent work aimed at a strategy the task does not support. |
+| `misread_requirements` | Solved a different problem than the issue states. Distinct from `wrong_approach`: wrong target versus wrong route to the right target. |
+| `spin_loop` | Repeated near-identical actions without state change. The judge-grade sibling of `stuckScore`. |
+| `context_thrash` | Re-reads and re-derives the same information; the context fills with redundant tool output. The transcript-level cousin of the §4 context-waste insight. |
+| `env_fumble` | Fought the sandbox or tooling rather than the task — missing deps, wrong commands, permission loops — while the infrastructure itself was healthy. |
+| `tool_misuse` | Persistently malformed tool calls, wrong flags, or misread tool output. |
+| `gate_flunk` | The work reached the quality gates, failed them, and the agent either stopped or shipped anyway. |
+| `premature_success` | Declared done without verifying: pushed with failing or absent tests, or an empty push with dirty paths. |
+| `scope_creep` | The task plus unrequested changes — drive-by refactors that bloat the diff and endanger the merge. |
+| `scope_shortfall` | Stopped early with named requirements unaddressed. |
+| `destructive_recovery` | Recovered from a mistake by destroying work — hard resets, wholesale rewrites — losing progress a cheaper correction would have kept (the warren-985e genre). |
+| `hallucinated_state` | Acted on files, APIs, or repo facts that do not exist. |
+| `steering_rescued` | Succeeded only after human steering redirected it. A positive signal for the §4 steering insight, not a demerit. |
+| `steering_resistant` | Received steering and failed to incorporate it. |
+
+Fifteen is more than a launch list wants. The list exists to be cut,
+and the cut is an owner pass.
+
+### 12.5 Cost and validity mechanics
+
+- **The operator's key, always.** Judges spend the deployment's own
+  credential, so transcripts never leave the deployment. The §8
+  self-hosted posture is non-negotiable here.
+- **A cost cap.** A per-judgment analog of `maxCostUsd`, plus a
+  fleet-level daily budget the extension refuses to exceed. When the
+  budget is hit, judging skips and marks the run `unjudged` rather
+  than degrading silently — a visible hole beats an invisible one.
+- **Calibration by re-judge.** Full coverage by a cheap model
+  inverts the usual sampling question: a periodic strong-model
+  re-judge over a small random sample measures the cheap judge's
+  agreement rate, and that disagreement rate is itself a tracked
+  metric. A model or prompt change is a new rubric version (§12.3),
+  never an in-place swap.
+- **Goodhart, restated.** §9 already names it: once verdicts feed
+  agent context, agents are measured by metrics they can read.
+  Verdicts therefore never enter agent context raw. The curated
+  mulch channel (§8) is the only door, and a human or a
+  high-confidence threshold guards it.
+
+### 12.6 What this changes in the sequencing sketch
+
+Nothing moves in the phase order. The judge is a Phase 4 resident —
+it lives in the observer extension and becomes a co-payer (payer #3,
+after warren-f566 and the analytics engine) for the durable lifecycle
+stream, the scoped observer credential, and the published wire-schema
+artifact from `FRICTION.md`. It need not wait for that stream to
+exist: the audit-log extension already tails runs against today's
+HTTP surface with the friction logged, and the judge can be born the
+same way. The verdict shape and the taxonomy, though, want deciding
+before the first judgment runs — a corpus of verdicts under a
+throwaway schema is worth less than no corpus at all.
 
 ## Appendix — pointers into the code
 
