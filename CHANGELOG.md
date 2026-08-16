@@ -10,6 +10,80 @@ Releases **0.9.10 and earlier** live in
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-08-15
+
+The analytics release. Warren now measures its own fleet: the
+**agent-analytics campaign** (plan pl-103e) turns raw run events into
+persisted facts and behavioral insights, and the new **judge
+extension** (plan pl-17ca) reads finished runs and issues structured
+verdicts against a 15-class behavioral rubric. Alongside the
+campaign, the UI stops polling lists and rides a single **lifecycle
+event stream**.
+
+### Added
+
+- **Agent analytics** (plan pl-103e). Dispatch-time facts become real
+  columns — `runs.created_at` with queue-wait surfaced on
+  `/analytics/runs` (#859), `runs.model` + `runs.provider` written at
+  dispatch (#860), `events.origin` threaded through the stream (#861),
+  and reap-time outcome facts persisted on runs (#862). On top of the
+  facts: `toolShape` + `fileShape` registries in `src/core` (#865), a
+  structured `tool_calls` rollup (#867), merged-PR rate per agent as
+  landed-work semantics (#866), steering-outcome deltas and
+  cost-per-merged-PR insights (#868), a per-directory difficulty map
+  (#870), and a context-waste proxy — tool_result byte share against
+  run context tokens (#872). The Run Analytics UI renders the new
+  insight kinds plus a per-directory struggle view (#874).
+- **The judge extension** (`extensions/judge/`, plan pl-17ca). A
+  standalone package that consumes warren's HTTP surface only: read
+  client with a fake-warren test double (#877), an append-only SQLite
+  verdict store (#878), the rubric-v1 system prompt rendering the full
+  15-class behavioral taxonomy (#879), a bounded pi-SDK judge loop
+  (#880), a collector daemon with budget gates (#881), calibration
+  re-judging with a band-agreement metric (#882), and a token-gated
+  `GET /verdicts.jsonl` export with paging (#883).
+- **Lifecycle event stream in the UI.** List pages subscribe to one
+  global lifecycle stream instead of polling (#875); the merge watcher
+  generalizes plan-run PR polling into a `post_reap` lifecycle hook
+  (#864); the last per-row plan-run poll drops to the lifecycle
+  fallback (#885, warren-f566).
+- **`check:client-contract`** — a lint-gate guard proving every
+  request path in the UI api client is served by `ROUTE_TABLE`
+  (#869, warren-4d2d).
+- **The agent-runtime adapter registry** (`src/runtime/adapters/`) —
+  one module per known runtime id, keyed off `KNOWN_RUNTIME_IDS` so a
+  new runtime cannot compile without an adapter. The harness-state
+  prefixes and terminal provider-error envelope types move from
+  hardcoded constants into per-adapter declarations, and a zero-commit
+  pi run whose only dirty path is a `.pi/sessions/` transcript now
+  reads as a deliberate no-op instead of a dropped commit
+  (#887, warren-c80e).
+- **`push_rejected_policy`** — a push the remote refuses on policy
+  grounds (GitHub push protection, protected branches) splits out of
+  `finalize_failed` into its own failure reason. A structured
+  `reap.push_rejected` event carries the unblock URL and flagged
+  paths to the operator, and the UI badge names the real failure
+  (#884, warren-b68d).
+
+### Changed
+
+- The actor vocabulary moved into `src/core/wire.ts`, the canonical
+  wire home, with the split modules guarded (#871).
+- The UI design tokens live in their own stylesheet (#863).
+- Fourteen grandfathered UI filenames renamed to kebab-case; the
+  Biome filename-exception list shrinks from 30 entries to 16
+  (#886, warren-4e87).
+
+### Fixed
+
+- The `tool_calls` FK references `runs` without the `public.`
+  qualifier, so the Postgres migrations replay under RLS checks
+  (#873).
+- The two spectator dead ends in public mode are closed (#857).
+- The plan-runs default filter means every state, not a subset
+  (#856).
+- The per-request idle timeout is bounded (#855).
+
 ## [0.15.0] — 2026-08-13
 
 The Forge release (plan pl-d1c9, 19 steps). Every GitHub call warren
