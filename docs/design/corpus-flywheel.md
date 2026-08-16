@@ -258,11 +258,28 @@ its own forge token for mining and reads warren's published surfaces.
 5. Does the trajectory export need a published wire-schema artifact
    beyond what `FRICTION.md` already specifies?
 6. Does pre-dispatch mining of a mirror's full git history earn its
-   cost, or does the replay case miner already collect every feature
-   the difficulty model needs?
-7. How does warren carry expertise into repos with no agent-readiness
-   layer — no `AGENTS.md`, no gates over agent-facing docs? Candidate
-   answers: a mulch overlay injected at dispatch, readiness
-   onboarding runs, a trellis audit as step zero per mirror. The
-   replay harness could measure whether any of them move the match
-   rate.
+   cost? The recorded leaning: no generic mining pipeline. The
+   replay case miner already collects the difficulty features
+   (patch size, files touched, time to fix, thread length) as a
+   side effect of its walk. The one cheap extra worth taking is a
+   **file co-change map** per mirror — which files change together,
+   from one `git log` pass — because it seeds directory-level
+   difficulty priors. Raw code history is pretraining's food. The
+   edge is outcome-joined runs, not git logs.
+7. How does warren carry expertise into repos with no
+   agent-readiness layer — no `AGENTS.md`, no gates over
+   agent-facing docs? The recorded leaning, in three layers. First,
+   the mirrors are ours, so onboarding runs build the readiness
+   layer in each mirror (discover test commands, write the
+   `AGENTS.md`, map upstream CI to a verify script), with a trellis
+   audit as step zero. Second, replay checks out historical commits
+   that predate any in-tree memory, so expertise must travel with
+   warren — mulch records injected as dispatch context, not read
+   from the tree. That is a small real feature on the dispatch
+   path. Third, and sharpest: **replay makes memory measurable.**
+   Run the same replay cases with and without the readiness layer,
+   and with and without mulch injection, graded against the merged
+   human fixes. Whether agent memory moves outcomes becomes an
+   experimental result with ground truth — the §8 closed loop of
+   the analytics record, finally testable. No new memory system.
+   Mulch is the substrate, and the delivery path is the gap.
