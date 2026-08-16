@@ -5,6 +5,10 @@
 sequence only. It designs no schema, no store, and no extension
 package, per ROADMAP rule 2. Nothing here is scheduled.
 **Date:** 2026-08-15.
+**Amended:** 2026-08-15, same day — the conversation continued.
+Additions: the mission positioning (§0), mirrors instead of forks
+(§3 step 3), the consent ladder and disclosure (§5), and historical
+issue replay (§6). Risks and open questions grew to match.
 **Grounds:** [`agent-analytics.md`](./agent-analytics.md) §1 (the
 corpus thesis), §8 (the closed loop), §12 (the judge layer);
 [`PHILOSOPHY.md`](../PHILOSOPHY.md) rules 1, 2, and 5;
@@ -22,6 +26,14 @@ This record extends that thesis one step: the corpus is also
 collect it, learn from it, and export it. The record lays out a
 six-step direction and names the risks. It decides nothing that needs
 an owner go.
+
+**Positioning (owner, 2026-08-15).** Warren is not a product. The
+owner expects the system to cost money, not earn it. The target is
+repos that do real work — research-critical, under-maintained OSS —
+selected like grants. The deliverable is refunded maintainer
+attention, never consumed maintainer attention. This positioning
+removes product pressure: no multi-tenant work, no growth features,
+and no reason to revisit the deferred auth widening.
 
 ## 1. The thesis
 
@@ -88,15 +100,19 @@ along as labels for reward shaping and review ranking, never as
 trusted input features. This step is additive and does not wait on
 step 1.
 
-**Step 3 — the fork fleet.** Run warren hard against three to five
-forks of external OSS repos (candidates: an nf-core module repo,
-CleanRL, a scverse repo). The fleet is the data engine. It
-diversifies the corpus beyond one repo and one language, it
-stress-tests the harness-agnostic claims on foreign stacks, and it
-teaches bot etiquette on forks before any upstream PR. It is also the
-payer for the fleet features warren lacks: parallel dispatch waves,
-replica dispatch, and cross-project scheduling — the Colonies entry
-(warren-2fa8) finally has a payer.
+**Step 3 — the mirror fleet.** Run warren hard against three to five
+**detached public mirrors** of external OSS repos (candidates: an
+nf-core module repo, CleanRL, a scverse repo). Mirrors, not GitHub
+forks: in a fork, a commit that says `#123` resolves against the
+upstream issue and lands a reference in the upstream timeline. In a
+detached mirror, `#123` resolves locally and nothing pings upstream.
+The one guard: strip full upstream URLs from agent commits. The
+mirrors stay public for transparency. **No upstream PRs are planned
+for this phase.** The goals are data collection, education, proof
+that the system works, and discovery of what breaks on foreign
+stacks. The fleet is also the payer for the fleet features warren
+lacks: parallel dispatch waves, replica dispatch, and cross-project
+scheduling — the Colonies entry (warren-2fa8) finally has a payer.
 
 **Step 4 — the throughput layer.** At fleet volume the binding
 constraint is human review, not compute. Two answers: a review queue
@@ -125,13 +141,87 @@ deployment.
 
 The leaning, deliberately not decided here: everything past step 2 is
 extension-tier, except the small dispatch-surface features that only
-core can provide (replica dispatch, a defer hook, cross-project
-scheduling). The router, the review queue, the replay evaluator, and
-the export are readers of published surfaces, in the posture the
-judge extension already proved. The decision point arrives when the
-first of them becomes a seed.
+core can provide (replica dispatch, a defer hook, base-commit
+pinning, cross-project scheduling). The router, the review queue, the
+replay harness, and the export are readers of published surfaces, in
+the posture the judge extension already proved. The decision point
+arrives when the first of them becomes a seed.
 
-## 5. Risks
+## 5. Consent and disclosure
+
+The mirror phase needs no consent — the licenses permit it and no
+signal reaches upstream. Consent becomes real when work goes
+upstream, which the owner has deferred until the system is proven or
+OSS sentiment moves. The ladder, weakest to strongest:
+
+1. **Detached mirror.** No consent needed, no signal emitted. The
+   current tier.
+2. **Policy-aware dispatch.** Warren reads the target repo's stated
+   AI-contribution policy and refuses upstream dispatch where the
+   policy forbids it. Consent becomes a checkable precondition — a
+   defer rule inside the router's dispatch-or-defer decision.
+3. **Explicit agreement, warren's operator drives.** Written scope
+   with the maintainer: which labels, a PR volume cap, human review
+   before anything posts, revocable at any time.
+4. **The maintainer operates.** The maintainer runs warren on their
+   own key. Consent is structural, because the operator is the
+   maintainer. The self-host commitment makes this tier the natural
+   end state.
+
+**Disclosure.** Article VII already forbids a bot that poses as a
+human. The stronger posture, held for the upstream phase: every
+upstream PR links its run, its full trajectory, and its verdict. An
+agent PR that is more auditable than a human PR is the trust wedge.
+
+## 6. Historical issue replay
+
+The mirror fleet can work **already-closed issues** and grade the
+result against the fix that upstream merged. Each replay case is the
+repo at the parent commit of the merged fix, plus the issue text as
+it stood before the fix. This turns the data phase into a benchmark:
+SWE-bench-shaped, but on the target repos, with real accepted fixes
+as ground truth. Three traps, each with a mitigation:
+
+- **Comment leakage.** Issue threads accumulate the solution over
+  time. A replay case must snapshot the thread at a cutoff — the
+  creation body plus pre-fix comments only.
+- **Pretraining contamination.** Old fixes sit in every model's
+  training data. Prefer issues closed after the dispatched model's
+  cutoff. The match rate by issue age is itself a contamination
+  probe: old issues that score higher than fresh ones show memory,
+  not capability, and the gap is measurable.
+- **Environment rot.** A checkout from years back has dead dependency
+  versions and broken CI. This bounds the replay window to roughly
+  the last year, on repos with real lockfiles. The bound agrees with
+  the contamination mitigation, which also prefers recent issues.
+
+**Grading.** The human patch is a reference solution, not the target.
+Warren's fix will look different and can be better. If the fixing PR
+added or changed tests, apply those tests to warren's patch — the
+ground truth. Patch similarity is a weak secondary signal. A judge
+comparison against the human patch rides along as a label only, per
+the facts-versus-labels rule in step 2.
+
+**What replay yields:**
+
+- A scoreboard per repo — the evidence a tier-3 consent conversation
+  needs ("on your last 200 closed issues, here is our match rate").
+- An offline answer to the cold-start risk in §7. Replay produces
+  hundreds of pre-labeled episodes per repo — known outcome, known
+  human effort (time to fix, patch size, thread length) — so the
+  difficulty model trains before the live fleet has volume.
+- Cheap replica and cost-tier experiments with ground-truth grades —
+  router training data at API cost.
+- A benchmark that refreshes itself. Every newly closed upstream
+  issue is a fresh, post-cutoff case. The artifact has value
+  independent of warren.
+
+**The warren-side gap is small.** Replay is ordinary dispatch plus
+one feature: pin a run to a base commit, not only a branch. The case
+miner, the grader, and the scoreboard fit one extension, which holds
+its own forge token for mining and reads warren's published surfaces.
+
+## 7. Risks
 
 - **Goodhart, twice.** §12.5 of the analytics record already forbids
   raw verdicts in agent context. The router reads verdicts, so the
@@ -144,15 +234,16 @@ first of them becomes a seed.
 - **Confounded comparisons.** Merge rate is confounded by issue
   difficulty. Every policy claim ships with denominators and
   confidence, per §9 of the analytics record.
-- **OSS etiquette.** Bot PRs to foreign repos burn trust. Forks
-  first, human review before anything goes upstream, and the durable
-  positioning is warren as a maintainer's own tool, not a bot that
-  visits.
+- **OSS etiquette.** Bot PRs to foreign repos burn trust. Mirrors
+  first, the consent ladder before anything goes upstream, and the
+  durable positioning is warren as a maintainer's own tool, not a
+  bot that visits.
 - **Low volume.** A bandit on three runs a day learns nothing. The
-  router (step 5) is worthless without the fleet (step 3). The
-  ordering is the mitigation.
+  live router (step 5) is worthless without the fleet (step 3).
+  Historical replay (§6) is the offline mitigation, because it
+  pre-labels episodes before live volume exists.
 
-## 6. Open questions
+## 8. Open questions
 
 1. What is the minimal feature set for the dispatch-context log, and
    does it live in core columns or in an extension store?
@@ -161,7 +252,17 @@ first of them becomes a seed.
 3. Does cross-project scheduling become the Colonies noun, or policy
    on the event bus? (The warren-2fa8 spike question, now with a
    payer.)
-4. Which forks make the first fleet, and at what run cadence and
-   budget?
+4. Which mirrors make the first fleet, at what run cadence and
+   budget, and against which selection criteria (impact,
+   maintenance gap, lockfile health, CI quality)?
 5. Does the trajectory export need a published wire-schema artifact
    beyond what `FRICTION.md` already specifies?
+6. Does pre-dispatch mining of a mirror's full git history earn its
+   cost, or does the replay case miner already collect every feature
+   the difficulty model needs?
+7. How does warren carry expertise into repos with no agent-readiness
+   layer — no `AGENTS.md`, no gates over agent-facing docs? Candidate
+   answers: a mulch overlay injected at dispatch, readiness
+   onboarding runs, a trellis audit as step zero per mirror. The
+   replay harness could measure whether any of them move the match
+   rate.
