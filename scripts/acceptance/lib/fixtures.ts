@@ -62,6 +62,13 @@ export interface BuiltFixtures {
 	 * (pl-3a79) and the registry seeds on boot only.
 	 */
 	readonly seedAgentsFilePath: string;
+	/**
+	 * PATH-shim directory holding the stub `pi` and `claude` binaries
+	 * (warren-ea0a — the internalized engine execs the bare names, so a
+	 * shim dir on the booted warren's PATH is the deterministic-agent
+	 * injection point, replacing the burrow-side runtime registry).
+	 */
+	readonly shimBinDir: string;
 }
 
 const FAKE_CANOPY_OWNER = "warren-acceptance";
@@ -90,6 +97,8 @@ export async function buildFixtures(roots: FixtureRoots): Promise<BuiltFixtures>
 	await buildSampleProject(sampleProjectPath);
 	const seedAgentsFilePath = join(fixturesRoot, "stub-agents.json");
 	await buildSeedAgentsFile(seedAgentsFilePath);
+	const shimBinDir = join(fixturesRoot, "shim-bin");
+	await buildShimBin(shimBinDir);
 	const claudeShimBinDir = join(fixturesRoot, "bin");
 	await buildPathShims(claudeShimBinDir);
 	await writeGitConfigRedirects(gitConfigPath, [
@@ -122,7 +131,28 @@ export async function buildFixtures(roots: FixtureRoots): Promise<BuiltFixtures>
 		claudeShimBinDir,
 		gitConfigPath,
 		seedAgentsFilePath,
+		shimBinDir,
 	};
+}
+
+/**
+ * Install the PATH shims the internalized engine resolves by bare name
+ * (warren-0f18 / warren-ea0a): `claude` and `pi`. The sandbox profile
+ * probes each name via Bun.which against the booted warren's PATH and
+ * binds the shim dir into the sandbox.
+ */
+async function buildShimBin(dir: string): Promise<void> {
+	await mkdir(dir, { recursive: true });
+	const shims: ReadonlyArray<readonly [string, string]> = [
+		["claude", "./stub-agent/claude-code-path-shim.sh"],
+		["pi", "./stub-agent/pi-path-shim.sh"],
+	];
+	for (const [name, rel] of shims) {
+		const source = new URL(rel, import.meta.url).pathname;
+		const target = join(dir, name);
+		await copyFile(source, target);
+		await chmod(target, 0o755);
+	}
 }
 
 /**
@@ -130,7 +160,7 @@ export async function buildFixtures(roots: FixtureRoots): Promise<BuiltFixtures>
  * warren AgentDefinition. Its `runtime=claude-code` frontmatter resolves
  * the internalized local engine's claude-code adapter (src/runtime/
  * adapters/), whose `claude` binary the harness stubs via the PATH shim
- * (buildClaudeShim below). `source: "builtin"` lets seedBuiltinAgents
+ * (buildPathShims below). `source: "builtin"` lets seedBuiltinAgents
  * upsert on drift across reboots.
  */
 async function buildSeedAgentsFile(path: string): Promise<void> {
@@ -290,8 +320,7 @@ async function buildSampleProject(repoPath: string): Promise<void> {
 	// Pi-shaped stub agent script (warren-17a4) — emits pi RPC JSONL with
 	// `turn_end` usage so scenario 16 can assert non-null cost/token
 	// columns after the run completes. Registered as the `pi` runtime in
-	// burrow-with-stub.ts with a custom AgentRuntime whose parseEvents is
-	// burrow's parsePiEvents.
+	// the harness under the pi PATH shim (warren-ea0a).
 	const harnessPiScript = new URL("./stub-agent/pi-agent.sh", import.meta.url);
 	const targetPiScript = join(repoPath, "tools", "pi-stub-agent.sh");
 	await copyFile(harnessPiScript, targetPiScript);
@@ -300,8 +329,7 @@ async function buildSampleProject(repoPath: string): Promise<void> {
 	// stream-json with a terminal `result` envelope carrying
 	// `total_cost_usd` + `usage.*_tokens` so scenario 17 can assert
 	// non-null cost/token columns after the run completes. Registered as
-	// the `claude-code` runtime in burrow-with-stub.ts (overriding
-	// burrow's built-in) with `parseJsonlClaude` as the event parser.
+	// the harness under the claude PATH shim (warren-0f18).
 	const harnessClaudeScript = new URL("./stub-agent/claude-code-agent.sh", import.meta.url);
 	const targetClaudeScript = join(repoPath, "tools", "claude-code-stub-agent.sh");
 	await copyFile(harnessClaudeScript, targetClaudeScript);

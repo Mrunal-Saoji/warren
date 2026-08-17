@@ -214,6 +214,11 @@ async function runInProcMode(opts: RunModeArgs): Promise<number> {
 		// POST /agents/refresh endpoint the scenarios used to call was
 		// deleted in pl-3a79. bootInProc passes this var through.
 		process.env.WARREN_SEED_AGENTS_FILE = fixtures.seedAgentsFilePath;
+		// The stub agent pins runtime=stub-shell (warren-83b5), an id outside
+		// warren's canonical KNOWN_RUNTIME_IDS. Declare it as an operator
+		// extension so registration and dispatch accept it while validation
+		// stays fail-closed by default (warren-c4be).
+		process.env.WARREN_EXTRA_RUNTIME_IDS = fixtures.stubAgentName;
 		// The stub agent pins runtime=claude-code and the internalized local
 		// engine execs the bare `claude` binary (warren-dc19). Prepend the
 		// fixture shim dir so every warren this harness boots (shared and
@@ -226,6 +231,10 @@ async function runInProcMode(opts: RunModeArgs): Promise<number> {
 			canopyRepoUrl: fixtures.canopyRepoUrl,
 			gitConfigPath: fixtures.gitConfigPath,
 			extraEnv: {
+				// The internalized engine execs the bare names `claude`/`pi`
+				// (warren-0f18/warren-ea0a): the fixture shim dir wins
+				// resolution, so runs drive the deterministic stub agents.
+				PATH: `${fixtures.shimBinDir}:${process.env.PATH ?? ""}`,
 				// Stub agent reads this; burrow's [env].optional in the sample
 				// project's burrow.toml forwards it into the sandbox. 8s gives
 				// scenarios 05/06 a steady stream of per-second heartbeat
@@ -247,7 +256,6 @@ async function runInProcMode(opts: RunModeArgs): Promise<number> {
 			mode: args.mode,
 			warrenUrl: handle.warrenUrl,
 			token: handle.token,
-			socketPath: handle.socketPath,
 			fixtures: {
 				canopyRepoUrl: fixtures.canopyRepoUrl,
 				canopyRepoPath: fixtures.canopyRepoPath,
@@ -258,6 +266,7 @@ async function runInProcMode(opts: RunModeArgs): Promise<number> {
 				knownSeedTitle: fixtures.knownSeedTitle,
 				knownMulchDomain: fixtures.knownMulchDomain,
 				gitConfigPath: fixtures.gitConfigPath,
+				shimBinDir: fixtures.shimBinDir,
 				seedAgentsFilePath: fixtures.seedAgentsFilePath,
 			},
 			logger,
@@ -265,7 +274,6 @@ async function runInProcMode(opts: RunModeArgs): Promise<number> {
 			lifecycle: {
 				killWarren: () => bootHandle.killWarren(),
 				restartWarren: () => bootHandle.restartWarren(),
-				killBurrow: () => bootHandle.killBurrow(),
 			},
 		};
 
@@ -302,7 +310,6 @@ async function runInProcMode(opts: RunModeArgs): Promise<number> {
 				if (args.keepTmp) {
 					// Stop processes but don't rm-rf the tmp dir.
 					await handle.killWarren().catch(() => undefined);
-					await handle.killBurrow().catch(() => undefined);
 					console.log(`acceptance: kept tmp dir at ${tmpRoot}`);
 				} else {
 					await handle.stop();
@@ -400,7 +407,6 @@ async function runContainerMode(opts: RunModeArgs): Promise<number> {
 			mode: args.mode,
 			warrenUrl: handle.warrenUrl,
 			token: handle.token,
-			socketPath: handle.socketPath,
 			fixtures: {
 				canopyRepoUrl: "",
 				canopyRepoPath: "",
@@ -411,6 +417,7 @@ async function runContainerMode(opts: RunModeArgs): Promise<number> {
 				knownSeedTitle: "",
 				knownMulchDomain: "",
 				gitConfigPath: "",
+				shimBinDir: "",
 				seedAgentsFilePath: "",
 			},
 			logger,
